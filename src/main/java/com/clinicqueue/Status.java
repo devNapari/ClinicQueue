@@ -1,6 +1,6 @@
 package com.clinicqueue;
 
-/** Lifecycle of a queue entry: WAITING -> CALLED -> IN_SERVICE -> DONE (or NO_SHOW / CANCELLED). */
+/** Service lifecycle; arrival check-in is tracked separately from WAITING -> CALLED -> IN_SERVICE. */
 public enum Status {
     WAITING, CALLED, IN_SERVICE, DONE, NO_SHOW, CANCELLED;
 

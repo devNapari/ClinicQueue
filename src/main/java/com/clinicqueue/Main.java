@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
  * Options:  --desktop   open the app in its own window (Edge/Chrome app mode, no browser tabs), pick a free port if needed
  *           --no-demo   start with an empty queue (no sample patients)
  *           --port=N    port to listen on (default 8080)
- * Environment: PORT, STAFF_PIN (default 1234), SEED_DEMO=false
+ * Environment: PORT, STAFF_PIN (legacy demo default 1234), role-specific *_PIN values, SEED_DEMO=false
  */
 public class Main {
 
@@ -64,6 +64,7 @@ public class Main {
             }
         }
         String pin = System.getenv().getOrDefault("STAFF_PIN", filePin());
+        StaffAccess staffAccess = StaffAccess.fromEnvironment(System.getenv(), pin);
 
         // Double-clicking the shortcut twice should not start a second copy: just open the window again.
         if (desktop && DesktopWindow.alreadyRunning(port)) {
@@ -78,7 +79,7 @@ public class Main {
         QueueService queue = new QueueService(clock, DemoData.defaultServices(), sms, predictor);
         if (seed) DemoData.seed(queue, sms, clock);
 
-        Server server = new Server(queue, sms, clock, pin);
+        Server server = new Server(queue, sms, clock, staffAccess);
         int bound = port;
         int attempts = desktop ? 10 : 1; // the desktop app tries the next ports if this one is taken
         for (int i = 0; i < attempts; i++) {
@@ -97,15 +98,23 @@ public class Main {
             t.setDaemon(true);
             return t;
         });
-        scheduler.scheduleAtFixedRate(queue::sweepNoShows, 30, 30, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(() -> {
+            queue.sweepNoShows();
+            queue.dispatchDueArrivalReminders();
+        }, 30, 30, TimeUnit.SECONDS);
 
         if (desktop) {
-            DesktopWindow.show(bound, pin.equals("1234"));
+            DesktopWindow.show(bound, !staffAccess.hasDepartmentPins() && pin.equals("1234"));
         } else {
             System.out.println("ClinicQueue running");
             System.out.println("  Start screen: http://localhost:" + bound + "/");
-            System.out.println("  Staff desk  : http://localhost:" + bound + "/staff   (PIN: " + pin + ")");
-            if (pin.equals("1234")) System.out.println("  Note: default PIN in use. Set STAFF_PIN to change it.");
+            System.out.println("  Staff desk  : http://localhost:" + bound + "/staff");
+            if (staffAccess.hasDepartmentPins()) {
+                System.out.println("  Department PINs are configured independently.");
+            } else {
+                System.out.println("  Legacy shared staff PIN mode is active.");
+                if (pin.equals("1234")) System.out.println("  Note: default PIN in use. Set STAFF_PIN to change it.");
+            }
         }
     }
 }

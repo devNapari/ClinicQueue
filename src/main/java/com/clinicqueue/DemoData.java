@@ -39,20 +39,20 @@ public final class DemoData {
             }
         }
 
-        queue.join("Kwame Mensah", "+233241000001", "consultation", QueueEntry.NORMAL, null);
-        queue.join("Ama Serwaa", "+233241000002", "consultation", QueueEntry.PRIORITY, "Pregnant");
-        queue.join("Kofi Boateng", "+233241000003", "consultation", QueueEntry.NORMAL, null);
-        queue.join("Abena Owusu", "+233241000004", "consultation", QueueEntry.NORMAL, null);
-        queue.join("Yaw Asante", "+233241000005", "consultation", QueueEntry.NORMAL, null);
-        queue.join("Esi Quaye", "+233241000006", "consultation", QueueEntry.NORMAL, null);
+        queue.joinWalkIn("Kwame Mensah", "+233241000001", "consultation", QueueEntry.NORMAL, null);
+        queue.joinWalkIn("Ama Serwaa", "+233241000002", "consultation", QueueEntry.PRIORITY, "Pregnant");
+        queue.joinWalkIn("Kofi Boateng", "+233241000003", "consultation", QueueEntry.NORMAL, null);
+        queue.joinWalkIn("Abena Owusu", "+233241000004", "consultation", QueueEntry.NORMAL, null);
+        queue.joinWalkIn("Yaw Asante", "+233241000005", "consultation", QueueEntry.NORMAL, null);
+        queue.joinWalkIn("Esi Quaye", "+233241000006", "consultation", QueueEntry.NORMAL, null);
 
         // Ama (priority) is seen first: call her and start the consultation.
         QueueEntry first = queue.callNext("consultation");
         queue.startService(first.id());
 
-        queue.join("Kojo Darko", "+233241000007", "lab", QueueEntry.NORMAL, null);
-        queue.join("Akosua Addo", "+233241000008", "lab", QueueEntry.NORMAL, null);
-        queue.join("Kwesi Tetteh", "+233241000009", "pharmacy", QueueEntry.NORMAL, null);
+        queue.joinWalkIn("Kojo Darko", "+233241000007", "lab", QueueEntry.NORMAL, null);
+        queue.joinWalkIn("Akosua Addo", "+233241000008", "lab", QueueEntry.NORMAL, null);
+        queue.joinWalkIn("Kwesi Tetteh", "+233241000009", "pharmacy", QueueEntry.NORMAL, null);
 
         sms.clear();
     }
@@ -66,7 +66,7 @@ public final class DemoData {
             String phone = "+23324" + String.format("%07d", rnd.nextInt(10_000_000));
             boolean elderly = rnd.nextInt(8) == 0;
             try {
-                queue.join(name, phone, serviceId,
+                queue.joinWalkIn(name, phone, serviceId,
                         elderly ? QueueEntry.PRIORITY : QueueEntry.NORMAL,
                         elderly ? "Elderly (70+)" : null);
                 joined++;

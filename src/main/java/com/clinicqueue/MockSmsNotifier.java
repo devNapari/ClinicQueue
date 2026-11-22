@@ -9,7 +9,7 @@ import java.util.List;
 /** Demo notifier: prints each "SMS" to the console and keeps the latest ones for the dashboard. */
 public class MockSmsNotifier implements Notifier {
 
-    public record Sms(Instant sentAt, String phone, String message) {}
+    public record Sms(Instant sentAt, String serviceId, String phone, String message) {}
 
     private static final int KEEP = 50;
 
@@ -24,7 +24,12 @@ public class MockSmsNotifier implements Notifier {
 
     @Override
     public synchronized void send(String phone, String message) {
-        outbox.addFirst(new Sms(clock.instant(), phone, message));
+        send(null, phone, message);
+    }
+
+    @Override
+    public synchronized void send(String serviceId, String phone, String message) {
+        outbox.addFirst(new Sms(clock.instant(), serviceId, phone, message));
         while (outbox.size() > KEEP) outbox.removeLast();
         if (echoToConsole) System.out.println("[SMS -> " + phone + "] " + message);
     }

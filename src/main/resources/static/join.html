@@ -126,8 +126,8 @@
 
   <main>
     <section id="join-view">
-      <h1>Wait at home. We will text you when it is nearly your turn.</h1>
-      <p class="lede">Choose a service, join the line from your phone, and come in when it is close.</p>
+      <h1>Wait at home until it is time to come in.</h1>
+      <p class="lede">We will send an arrival reminder about an hour before your estimated turn. Check in on this page when you reach the hospital.</p>
 
       <form id="join-form" novalidate>
         <fieldset>
@@ -168,6 +168,7 @@
       </article>
 
       <p id="t-note" class="smallprint">This page updates by itself, and we will also text you.</p>
+      <button id="arrive-btn" class="btn primary wide" type="button" hidden>I'm at the hospital</button>
       <button id="leave-btn" class="btn danger wide" type="button">Leave the queue</button>
       <button id="again-btn" class="btn primary wide" type="button" hidden>Join the queue again</button>
     </section>
@@ -305,10 +306,12 @@
         switch (t.status) {
           case "WAITING":
             waiting = true;
-            headline = t.position === 1 ? "You are next" : "You are " + CQ.ordinal(t.position) + " in line";
-            sub = t.position <= 3
-              ? ahead(t.peopleAhead) + ". Please head to the clinic now."
-              : ahead(t.peopleAhead) + ". Stay where you are. We will text you when you reach 3rd place.";
+            headline = t.arrivedAt
+              ? "You are checked in"
+              : (t.position === 1 ? "You are next" : "You are " + CQ.ordinal(t.position) + " in line");
+            sub = t.arrivedAt
+              ? ahead(t.peopleAhead) + ". Please wait nearby; your provider will call your ticket."
+              : ahead(t.peopleAhead) + ". Wait where you are. We will text you when it is time to come in.";
             break;
           case "CALLED":
             headline = "It is your turn";
@@ -341,6 +344,7 @@
         }
 
         const finished = !(t.status === "WAITING" || t.status === "CALLED");
+        $("arrive-btn").hidden = t.status !== "WAITING" || Boolean(t.arrivedAt);
         $("leave-btn").hidden = finished || t.status === "IN_SERVICE";
         $("again-btn").hidden = !(t.status === "DONE" || t.status === "NO_SHOW" || t.status === "CANCELLED");
         $("t-note").hidden = t.status === "DONE" || t.status === "NO_SHOW" || t.status === "CANCELLED";
@@ -379,6 +383,17 @@
           render(await CQ.api("/api/queue/" + ticket.id + "/cancel", { method: "POST" }));
         } catch (e) {
           alert(e.message);
+        }
+      });
+
+      $("arrive-btn").addEventListener("click", async () => {
+        $("arrive-btn").disabled = true;
+        try {
+          render(await CQ.api("/api/queue/" + ticket.id + "/arrive", { method: "POST" }));
+        } catch (e) {
+          alert(e.message);
+        } finally {
+          $("arrive-btn").disabled = false;
         }
       });
 

@@ -8,7 +8,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -21,9 +20,10 @@ import java.util.concurrent.Executors;
  * REST API + static web pages on the JDK's built-in HTTP server (no external dependencies).
  *
  * This computer only: GET /api/lan (the Wi-Fi address for phones)
- * Public:  GET /api/services, POST /api/queue/join, GET /api/queue/{id}, POST /api/queue/{id}/cancel
- * Staff (header X-Staff-Pin): queue view, call next, start/finish/no-show, add walk-in, stats, SMS log
- * Demo  (header X-Staff-Pin): add rush of patients, fast-forward the clock, reset
+ * Public:  service list, remote queue join, ticket view/cancel/check-in
+ * Providers (header X-Staff-Pin): their own service queue, arrival reminders, call/start/finish
+ * Nurses (header X-Staff-Pin): register walk-ins across services
+ * Legacy demo PIN: full queue desk and demo controls
  */
 public class Server {
 
@@ -32,13 +32,17 @@ public class Server {
     private final QueueService queue;
     private final MockSmsNotifier sms;
     private final AdjustableClock clock;
-    private final String staffPin;
+    private final StaffAccess staffAccess;
 
     public Server(QueueService queue, MockSmsNotifier sms, AdjustableClock clock, String staffPin) {
+        this(queue, sms, clock, StaffAccess.singlePin(staffPin));
+    }
+
+    public Server(QueueService queue, MockSmsNotifier sms, AdjustableClock clock, StaffAccess staffAccess) {
         this.queue = queue;
         this.sms = sms;
         this.clock = clock;
-        this.staffPin = staffPin;
+        this.staffAccess = staffAccess;
     }
 
     public HttpServer start(int port) throws IOException {
@@ -64,6 +68,8 @@ public class Server {
             }
         } catch (IllegalArgumentException e) {
             sendJson(ex, 400, error(e.getMessage()));
+        } catch (ForbiddenException e) {
+            sendJson(ex, 403, error(e.getMessage()));
         } catch (SecurityException e) {
             sendJson(ex, 401, error(e.getMessage()));
         } catch (NoSuchElementException e) {
@@ -119,27 +125,53 @@ public class Server {
                 sendJson(ex, 200, patientJson(queue.get(id)));
                 return;
             }
+            if (post && seg.length == 3 && seg[2].equals("arrive")) {
+                queue.markArrived(id);
+                sendJson(ex, 200, patientJson(queue.get(id)));
+                return;
+            }
+        }
+
+        // ---------------- nurse registration (PIN protected)
+        if (seg[0].equals("nurse")) {
+            StaffAccess.Principal principal = requireStaff(ex);
+            requireNurse(principal);
+            if (post && is(seg, "nurse", "walkins")) {
+                Map<String, String> b = Json.parseObject(readBody(ex));
+                QueueEntry e = queue.joinWalkIn(b.get("name"), b.get("phone"), b.get("serviceId"),
+                        QueueEntry.NORMAL, null);
+                sendJson(ex, 201, staffJson(queue.get(e.id())));
+                return;
+            }
         }
 
         // ---------------- staff + demo (PIN protected)
         if (seg[0].equals("staff") || seg[0].equals("demo")) {
-            requirePin(ex);
+            StaffAccess.Principal principal = requireStaff(ex);
+
+            if (get && is(seg, "staff", "session")) {
+                sendJson(ex, 200, sessionJson(principal));
+                return;
+            }
 
             if (get && is(seg, "staff", "queue", seg.length == 3 ? seg[2] : "")) {
+                requireServiceAccess(principal, seg[2]);
                 List<Object> rows = new ArrayList<>();
                 for (QueueService.EntryView v : queue.queueFor(seg[2])) rows.add(staffJson(v));
                 sendJson(ex, 200, rows);
                 return;
             }
             if (post && seg.length == 3 && seg[0].equals("staff") && seg[1].equals("call-next")) {
+                requireServiceAccess(principal, seg[2]);
                 QueueEntry e = queue.callNext(seg[2]);
                 sendJson(ex, 200, staffJson(queue.get(e.id())));
                 return;
             }
             if (post && is(seg, "staff", "join")) {
                 Map<String, String> b = Json.parseObject(readBody(ex));
+                requireServiceAccess(principal, b.get("serviceId"));
                 int priority = parseInt(b.get("priority"), QueueEntry.NORMAL, "priority");
-                QueueEntry e = queue.join(b.get("name"), b.get("phone"), b.get("serviceId"),
+                QueueEntry e = queue.joinWalkIn(b.get("name"), b.get("phone"), b.get("serviceId"),
                         priority, b.get("reason"));
                 sendJson(ex, 201, staffJson(queue.get(e.id())));
                 return;
@@ -147,23 +179,33 @@ public class Server {
             if (post && seg.length == 4 && seg[0].equals("staff") && seg[1].equals("entries")
                     && seg[2].matches("\\d{1,18}")) {
                 long id = Long.parseLong(seg[2]);
+                QueueEntry current = queue.get(id).entry();
+                requireServiceAccess(principal, current.serviceId());
                 QueueEntry e = switch (seg[3]) {
                     case "start" -> queue.startService(id);
                     case "finish" -> queue.finish(id);
                     case "noshow" -> queue.markNoShow(id);
                     case "cancel" -> queue.cancel(id);
+                    case "arrival-reminder" -> queue.sendArrivalReminder(id);
                     default -> throw new NoSuchElementException("Unknown action: " + seg[3]);
                 };
                 sendJson(ex, 200, staffJson(queue.get(e.id())));
                 return;
             }
             if (get && is(seg, "staff", "stats")) {
-                sendJson(ex, 200, statsJson());
+                if (principal.role() == StaffAccess.Role.NURSE)
+                    throw new ForbiddenException("Nurse access is limited to walk-in registration");
+                String serviceId = principal.role() == StaffAccess.Role.PROVIDER ? principal.serviceId() : null;
+                sendJson(ex, 200, statsJson(serviceId));
                 return;
             }
             if (get && is(seg, "staff", "sms")) {
+                if (principal.role() == StaffAccess.Role.NURSE)
+                    throw new ForbiddenException("Nurse access is limited to walk-in registration");
                 List<Object> rows = new ArrayList<>();
                 for (MockSmsNotifier.Sms s : sms.recent()) {
+                    if (principal.role() == StaffAccess.Role.PROVIDER
+                            && !principal.serviceId().equals(s.serviceId())) continue;
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("sentAt", s.sentAt());
                     m.put("phone", s.phone());
@@ -174,6 +216,7 @@ public class Server {
                 return;
             }
             if (post && is(seg, "demo", "rush")) {
+                requireLegacy(principal);
                 Map<String, String> b = Json.parseObject(readBody(ex));
                 int count = parseInt(b.get("count"), 5, "count");
                 if (count < 1 || count > 20) throw new IllegalArgumentException("count must be 1-20");
@@ -185,6 +228,7 @@ public class Server {
                 return;
             }
             if (post && is(seg, "demo", "advance")) {
+                requireLegacy(principal);
                 Map<String, String> b = Json.parseObject(readBody(ex));
                 int minutes = parseInt(b.get("minutes"), 5, "minutes");
                 if (minutes < 1 || minutes > 120) throw new IllegalArgumentException("minutes must be 1-120");
@@ -192,10 +236,12 @@ public class Server {
                 Map<String, Object> out = new LinkedHashMap<>();
                 out.put("advancedMinutes", minutes);
                 out.put("noShowsMarked", queue.sweepNoShows());
+                out.put("arrivalRemindersSent", queue.dispatchDueArrivalReminders());
                 sendJson(ex, 200, out);
                 return;
             }
             if (post && is(seg, "demo", "reset")) {
+                requireLegacy(principal);
                 clock.resetOffset();
                 queue.clear();
                 sms.clear();
@@ -243,6 +289,8 @@ public class Server {
         m.put("peopleAhead", v.peopleAhead());
         m.put("estimatedWaitMinutes", v.estimatedWaitMinutes());
         m.put("joinedAt", e.joinedAt());
+        m.put("arrivedAt", e.arrivedAt());
+        m.put("arrivalReminderSentAt", e.arrivalReminderSentAt());
         return m;
     }
 
@@ -259,10 +307,18 @@ public class Server {
         return m;
     }
 
-    private Map<String, Object> statsJson() {
-        Map<String, Object> out = new LinkedHashMap<>(queue.stats());
+    private Map<String, Object> sessionJson(StaffAccess.Principal principal) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("role", principal.role().name().toLowerCase());
+        out.put("serviceId", principal.serviceId());
+        return out;
+    }
+
+    private Map<String, Object> statsJson(String serviceId) {
+        Map<String, Object> out = new LinkedHashMap<>(queue.stats(serviceId));
         List<Object> learned = new ArrayList<>();
         for (Service s : queue.services()) {
+            if (serviceId != null && !serviceId.equals(s.id())) continue;
             List<Object> hours = new ArrayList<>();
             for (Map.Entry<Integer, Double> h : queue.predictor().hourlyAverageMinutes(s.id()).entrySet()) {
                 Map<String, Object> row = new LinkedHashMap<>();
@@ -283,11 +339,32 @@ public class Server {
 
     // ------------------------------------------------------------------ helpers
 
-    private void requirePin(HttpExchange ex) {
+    private StaffAccess.Principal requireStaff(HttpExchange ex) {
         String given = ex.getRequestHeaders().getFirst("X-Staff-Pin");
-        boolean ok = given != null && MessageDigest.isEqual(
-                given.getBytes(StandardCharsets.UTF_8), staffPin.getBytes(StandardCharsets.UTF_8));
-        if (!ok) throw new SecurityException("Staff PIN required");
+        StaffAccess.Principal principal = staffAccess.authenticate(given);
+        if (principal == null) throw new SecurityException("Staff PIN required");
+        return principal;
+    }
+
+    private static void requireServiceAccess(StaffAccess.Principal principal, String serviceId) {
+        if (principal.role() == StaffAccess.Role.NURSE)
+            throw new ForbiddenException("Nurse access is limited to walk-in registration");
+        if (principal.role() == StaffAccess.Role.PROVIDER && !principal.serviceId().equals(serviceId))
+            throw new ForbiddenException("This PIN cannot manage the " + serviceId + " queue");
+    }
+
+    private static void requireNurse(StaffAccess.Principal principal) {
+        if (principal.role() != StaffAccess.Role.NURSE && principal.role() != StaffAccess.Role.LEGACY)
+            throw new ForbiddenException("This PIN cannot register walk-in patients");
+    }
+
+    private static void requireLegacy(StaffAccess.Principal principal) {
+        if (principal.role() != StaffAccess.Role.LEGACY)
+            throw new ForbiddenException("Demo controls require the shared demo PIN");
+    }
+
+    private static final class ForbiddenException extends RuntimeException {
+        ForbiddenException(String message) { super(message); }
     }
 
     private static boolean is(String[] seg, String... expected) {

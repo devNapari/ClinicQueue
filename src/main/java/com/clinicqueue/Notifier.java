@@ -6,4 +6,8 @@ package com.clinicqueue;
  */
 public interface Notifier {
     void send(String phone, String message);
+
+    default void send(String serviceId, String phone, String message) {
+        send(phone, message);
+    }
 }

@@ -23,7 +23,8 @@ public class QueueEntry {
     private Instant calledAt;
     private Instant startedAt;
     private Instant finishedAt;
-    private boolean nearTurnNotified;
+    private Instant arrivedAt;
+    private Instant arrivalReminderSentAt;
 
     public QueueEntry(long id, String ticket, String patientName, String phone,
                       String serviceId, int priority, String priorityReason, Instant joinedAt) {
@@ -49,11 +50,16 @@ public class QueueEntry {
     public Instant calledAt() { return calledAt; }
     public Instant startedAt() { return startedAt; }
     public Instant finishedAt() { return finishedAt; }
-    public boolean nearTurnNotified() { return nearTurnNotified; }
+    public Instant arrivedAt() { return arrivedAt; }
+    public boolean hasArrived() { return arrivedAt != null; }
+    public Instant arrivalReminderSentAt() { return arrivalReminderSentAt; }
 
     void setStatus(Status s) { this.status = s; }
     void setCalledAt(Instant t) { this.calledAt = t; }
     void setStartedAt(Instant t) { this.startedAt = t; }
     void setFinishedAt(Instant t) { this.finishedAt = t; }
-    void markNearTurnNotified() { this.nearTurnNotified = true; }
+    void markArrived(Instant t) {
+        if (arrivedAt == null) arrivedAt = t;
+    }
+    void markArrivalReminderSentAt(Instant t) { this.arrivalReminderSentAt = t; }
 }

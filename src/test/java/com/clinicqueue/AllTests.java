@@ -164,9 +164,56 @@ public class AllTests {
             eq(20, v.estimatedWaitMinutes(), "2 patients x 10 min");
         });
 
+        test("queue: providers can only call patients who checked in", () -> {
+            Ctx c = ctx();
+            QueueEntry remote = c.q.join("Remote", phone(1), "consultation", QueueEntry.NORMAL, null);
+            throwsEx(IllegalStateException.class, () -> c.q.callNext("consultation"));
+            c.q.markArrived(remote.id());
+            eq(remote.id(), c.q.callNext("consultation").id(), "the earlier checked-in ticket is called first");
+            eq(Status.CALLED, remote.status(), "actual call changes the queue status");
+        });
+
+        test("queue: arrival reminders are sent once at the one-hour threshold", () -> {
+            Ctx c = ctx();
+            List<QueueEntry> ahead = new ArrayList<>();
+            for (int i = 1; i <= 8; i++)
+                ahead.add(c.q.join("P" + i, phone(i), "consultation", QueueEntry.NORMAL, null));
+            QueueEntry target = ahead.get(7);
+            eq(null, target.arrivalReminderSentAt(), "70-minute wait is not yet due");
+            eq(1L, countTo(c.sms, phone(8)), "target only got the join confirmation");
+            c.q.cancel(ahead.get(0).id());
+            check(target.arrivalReminderSentAt() != null, "reminder sent after wait fell to 60 minutes");
+            eq(2L, countTo(c.sms, phone(8)), "join confirmation plus one arrival reminder");
+            c.clock.plusMinutes(5);
+            eq(0, c.q.dispatchDueArrivalReminders(), "a sent reminder is never repeated");
+            eq(2L, countTo(c.sms, phone(8)), "no duplicate after scheduler tick");
+        });
+
+        test("queue: nurse walk-ins may omit a phone and are already arrived", () -> {
+            Ctx c = ctx();
+            QueueEntry walkIn = c.q.joinWalkIn("Walk In", "", "lab", QueueEntry.NORMAL, null);
+            check(walkIn.hasArrived(), "walk-in is checked in at registration");
+            eq(0L, c.sms.recent().stream().filter(s -> s.phone().isEmpty()).count(),
+                    "no SMS is sent without a phone number");
+            eq(walkIn.id(), c.q.callNext("lab").id(), "provider can call the checked-in walk-in");
+        });
+
+        test("queue: a manual arrival reminder is one-time and cannot be sent after check-in", () -> {
+            Ctx c = ctx();
+            for (int i = 1; i <= 8; i++)
+                c.q.join("Ahead " + i, phone(i), "consultation", QueueEntry.NORMAL, null);
+            QueueEntry patient = c.q.join("Manual", phone(9), "consultation", QueueEntry.NORMAL, null);
+            c.q.sendArrivalReminder(patient.id());
+            long patientId = patient.id();
+            throwsEx(IllegalStateException.class, () -> c.q.sendArrivalReminder(patientId));
+            c.q.markArrived(patientId);
+            throwsEx(IllegalStateException.class, () -> c.q.sendArrivalReminder(patientId));
+        });
+
         test("queue: finishing a visit teaches the predictor", () -> {
             Ctx c = ctx();
             QueueEntry e = c.q.join("A", phone(1), "consultation", QueueEntry.NORMAL, null);
+            c.q.markArrived(e.id());
             c.q.callNext("consultation");
             c.q.startService(e.id());
             c.clock.plusMinutes(15);
@@ -181,6 +228,8 @@ public class AllTests {
             Ctx c = ctx();
             QueueEntry a = c.q.join("A", phone(1), "consultation", QueueEntry.NORMAL, null);
             QueueEntry b = c.q.join("B", phone(2), "consultation", QueueEntry.NORMAL, null);
+            c.q.markArrived(a.id());
+            c.q.markArrived(b.id());
             c.q.callNext("consultation");
             c.clock.plusMinutes(9);
             eq(0, c.q.sweepNoShows(), "still inside the grace period");
@@ -229,21 +278,20 @@ public class AllTests {
             throwsEx(NoSuchElementException.class, () -> c.q.callNext("lab")); // nobody waiting there
         });
 
-        test("notifications: patients are texted when they are nearly up, once", () -> {
+        test("notifications: automatic arrival reminder is sent for a short estimated wait", () -> {
             Ctx c = ctx();
-            for (int i = 1; i <= 5; i++) c.q.join("P" + i, phone(i), "consultation", QueueEntry.NORMAL, null);
-            eq(1L, countTo(c.sms, phone(4)), "4th patient only got the join confirmation");
-            c.q.callNext("consultation"); // P1 called, P4 moves to position 3
-            eq(2L, countTo(c.sms, phone(1)), "P1: join confirmation + your-turn text");
-            eq(2L, countTo(c.sms, phone(4)), "P4: join confirmation + nearly-your-turn text");
-            eq(1L, countTo(c.sms, phone(5)), "P5 is still far back");
-            eq(1L, countTo(c.sms, phone(2)), "P2 was already told, not texted twice");
+            QueueEntry patient = c.q.join("P1", phone(1), "consultation", QueueEntry.NORMAL, null);
+            check(patient.arrivalReminderSentAt() != null, "zero-minute estimated wait is due immediately");
+            eq(2L, countTo(c.sms, phone(1)), "join confirmation plus automatic arrival reminder");
+            eq(0, c.q.dispatchDueArrivalReminders(), "the scheduler does not repeat the reminder");
         });
 
         test("stats: counts and average wait", () -> {
             Ctx c = ctx();
             QueueEntry a = c.q.join("A", phone(1), "consultation", QueueEntry.NORMAL, null);
             QueueEntry b = c.q.join("B", phone(2), "consultation", QueueEntry.NORMAL, null);
+            c.q.markArrived(a.id());
+            c.q.markArrived(b.id());
             c.clock.plusMinutes(10);
             c.q.callNext("consultation");
             c.q.startService(a.id());
@@ -324,6 +372,10 @@ public class AllTests {
                 eq(200, staffView.status(), "staff queue status");
                 check(staffView.body().contains("\"priority\":0"), "self-declared priority must be ignored");
 
+                eq(409, call(client, "POST", base + "/api/staff/call-next/consultation", "", "9876").status(),
+                        "provider cannot call a patient before check-in");
+                eq(200, call(client, "POST", base + "/api/queue/" + id + "/arrive", "", null).status(),
+                        "patient can check in");
                 Resp next = call(client, "POST", base + "/api/staff/call-next/consultation", "", "9876");
                 eq(200, next.status(), "call next status");
                 Resp mine = call(client, "GET", base + "/api/queue/" + id, null, null);
@@ -352,7 +404,7 @@ public class AllTests {
                 Resp home = call(client, "GET", base + "/", null, null);
                 eq(200, home.status(), "home");
                 check(home.body().contains("ClinicQueue"), "home page content");
-                check(home.body().contains("Sign in as queue desk staff") && home.body().contains("Join the queue"),
+                check(home.body().contains("Staff or nurse sign in") && home.body().contains("Join the queue"),
                         "start screen offers both options");
                 eq(200, call(client, "GET", base + "/staff", null, null).status(), "staff page");
                 Resp join = call(client, "GET", base + "/join", null, null);
@@ -367,6 +419,7 @@ public class AllTests {
                 Resp join = call(client, "POST", base + "/api/queue/join",
                         "{\"name\":\"Kojo Demo\",\"phone\":\"0241112222\",\"serviceId\":\"pharmacy\"}", null);
                 String id = Json.parseObject(extractFlat(join.body())).get("id");
+                eq(200, call(client, "POST", base + "/api/queue/" + id + "/arrive", "", null).status(), "check in");
                 call(client, "POST", base + "/api/staff/call-next/pharmacy", "", "9876");
                 eq(200, call(client, "POST", base + "/api/staff/entries/" + id + "/start", "", "9876").status(), "start");
                 eq(200, call(client, "POST", base + "/api/demo/advance", "{\"minutes\":12}", "9876").status(), "advance");
@@ -388,6 +441,63 @@ public class AllTests {
         } finally {
             http.stop(0);
         }
+    }
+
+    static void roleAccessTests() throws Exception {
+        AdjustableClock appClock = new AdjustableClock(ZoneOffset.UTC);
+        MockSmsNotifier sms = new MockSmsNotifier(appClock, false);
+        QueueService queue = new QueueService(appClock, DemoData.defaultServices(), sms,
+                new WaitTimePredictor(ZoneOffset.UTC));
+        StaffAccess access = StaffAccess.fromEnvironment(Map.of(
+                "CONSULTATION_PIN", "1111",
+                "LAB_PIN", "2222",
+                "PHARMACY_PIN", "3333",
+                "NURSE_PIN", "4444"), "9999");
+        HttpServer http = new Server(queue, sms, appClock, access).start(0);
+        String base = "http://127.0.0.1:" + http.getAddress().getPort();
+        HttpClient client = HttpClient.newHttpClient();
+
+        try {
+            test("roles: provider PIN is limited to its service and nurse can only register", () -> {
+                Resp session = call(client, "GET", base + "/api/staff/session", null, "1111");
+                check(session.body().contains("\"role\":\"provider\"")
+                        && session.body().contains("\"serviceId\":\"consultation\""),
+                        "provider session identifies its service");
+                eq(403, call(client, "GET", base + "/api/staff/queue/lab", null, "1111").status(),
+                        "provider cannot access another service");
+                eq(403, call(client, "POST", base + "/api/staff/call-next/lab", "", "1111").status(),
+                        "provider cannot call another service");
+                eq(403, call(client, "GET", base + "/api/staff/stats", null, "4444").status(),
+                        "nurse cannot access provider statistics");
+                eq(403, call(client, "GET", base + "/api/staff/queue/lab", null, "4444").status(),
+                        "nurse cannot access provider queue");
+
+                Resp created = call(client, "POST", base + "/api/nurse/walkins",
+                        "{\"name\":\"Walk-in Lab\",\"phone\":\"\",\"serviceId\":\"lab\"}", "4444");
+                eq(201, created.status(), "nurse can register a phone-less walk-in");
+                check(created.body().contains("\"arrivedAt\":") && !created.body().contains("\"arrivedAt\":null"),
+                        "walk-in is already checked in");
+                String id = Json.parseObject(extractFlat(created.body())).get("id");
+                Resp providerStats = call(client, "GET", base + "/api/staff/stats", null, "1111");
+                check(providerStats.body().contains("\"serviceId\":\"consultation\"")
+                        && !providerStats.body().contains("\"serviceId\":\"lab\""),
+                        "provider statistics are limited to its service");
+                eq(200, call(client, "POST", base + "/api/staff/call-next/lab", "", "2222").status(),
+                        "lab provider can call the registered patient");
+                eq(403, call(client, "POST", base + "/api/staff/entries/" + id + "/start", "", "4444").status(),
+                        "nurse cannot start a service");
+            });
+        } finally {
+            http.stop(0);
+        }
+
+        test("roles: department PINs must be complete and unique", () -> {
+            throwsEx(IllegalArgumentException.class,
+                    () -> StaffAccess.fromEnvironment(Map.of("CONSULTATION_PIN", "1111"), "9999"));
+            throwsEx(IllegalArgumentException.class, () -> StaffAccess.fromEnvironment(Map.of(
+                    "CONSULTATION_PIN", "1111", "LAB_PIN", "1111",
+                    "PHARMACY_PIN", "3333", "NURSE_PIN", "4444"), "9999"));
+        });
     }
 
     // ------------------------------------------------------------ desktop window
@@ -449,6 +559,7 @@ public class AllTests {
         queueTests();
         jsonTests();
         httpTests();
+        roleAccessTests();
         desktopTests();
         System.out.println();
         System.out.println(passed + " passed, " + failed + " failed");

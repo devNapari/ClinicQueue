@@ -84,13 +84,13 @@
     <div class="choices">
       <section class="choice staff" aria-labelledby="staff-title">
         <div>
-          <h2 id="staff-title">I work at the queue desk</h2>
-          <p>Call patients, keep the line moving and see how long people are waiting.</p>
+          <h2 id="staff-title">I work at the clinic</h2>
+          <p>Doctors, lab technicians, dispensary staff, and nurses can manage their part of the patient flow.</p>
         </div>
         <div class="choice-bottom">
-          <button id="staff-toggle" class="btn amber wide" type="button" aria-expanded="false" aria-controls="staff-form">Sign in as queue desk staff</button>
+          <button id="staff-toggle" class="btn amber wide" type="button" aria-expanded="false" aria-controls="staff-form">Staff or nurse sign in</button>
           <form id="staff-form" hidden>
-            <label class="field">Staff PIN
+            <label class="field">Department or nurse PIN
               <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required>
             </label>
             <p id="pin-error" class="error" role="alert"></p>
@@ -102,7 +102,7 @@
       <section class="choice patient" aria-labelledby="patient-title">
         <div class="choice-top">
           <h2 id="patient-title">I am a patient</h2>
-          <p>Get a ticket and wait wherever you like. We will text you when it is nearly your turn.</p>
+          <p>Get a ticket, receive a reminder about an hour before your estimated turn, and check in when you reach the hospital.</p>
         </div>
         <div>
           <div class="perf"></div>
@@ -175,7 +175,7 @@
         err.textContent = "";
         const pin = $("pin").value;
         try {
-          await CQ.api("/api/staff/stats", { pin });
+          await CQ.api("/api/staff/session", { pin });
           try { sessionStorage.setItem(PIN_KEY, pin); } catch (e) {}
           location.href = "/staff";
         } catch (e) {

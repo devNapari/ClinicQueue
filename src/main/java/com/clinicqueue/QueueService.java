@@ -22,7 +22,7 @@ import java.util.TreeMap;
  */
 public class QueueService {
 
-    public static final int NEAR_TURN_POSITION = 3;
+    public static final int ARRIVAL_REMINDER_MINUTES = 60;
     public static final int NO_SHOW_GRACE_MINUTES = 10;
 
     public record EntryView(QueueEntry entry, int position, int peopleAhead, int estimatedWaitMinutes) {}
@@ -64,17 +64,29 @@ public class QueueService {
 
     public synchronized QueueEntry join(String name, String phone, String serviceId,
                                         int priority, String reason) {
+        return addEntry(name, phone, serviceId, priority, reason, false, false);
+    }
+
+    /** Registers an in-person patient; an empty phone number is allowed. */
+    public synchronized QueueEntry joinWalkIn(String name, String phone, String serviceId,
+                                              int priority, String reason) {
+        return addEntry(name, phone, serviceId, priority, reason, true, true);
+    }
+
+    private QueueEntry addEntry(String name, String phone, String serviceId, int priority,
+                                String reason, boolean phoneOptional, boolean alreadyArrived) {
         if (serviceId == null || serviceId.isBlank()) throw new IllegalArgumentException("Choose a service");
         Service svc = requireService(serviceId);
         if (name == null || name.isBlank()) throw new IllegalArgumentException("Name is required");
         if (name.length() > 80) throw new IllegalArgumentException("Name is too long");
-        String cleanPhone = normalizePhone(phone);
+        String cleanPhone = phoneOptional && (phone == null || phone.isBlank()) ? "" : normalizePhone(phone);
         if (priority < QueueEntry.NORMAL || priority > QueueEntry.EMERGENCY)
             throw new IllegalArgumentException("Invalid priority");
         if (priority > QueueEntry.NORMAL && (reason == null || reason.isBlank()))
             throw new IllegalArgumentException("A reason is required for priority entries");
         for (QueueEntry e : entries.values()) {
-            if (e.status().isActive() && e.serviceId().equals(serviceId) && e.phone().equals(cleanPhone))
+            if (!cleanPhone.isEmpty() && e.status().isActive()
+                    && e.serviceId().equals(serviceId) && e.phone().equals(cleanPhone))
                 throw new IllegalStateException("This phone number is already in the queue for " + svc.name());
         }
 
@@ -83,13 +95,20 @@ public class QueueService {
                 + "-" + String.format("%03d", n);
         QueueEntry entry = new QueueEntry(nextId++, ticket, name.trim(), cleanPhone, serviceId,
                 priority, reason == null ? "" : reason.trim(), clock.instant());
+        if (alreadyArrived) entry.markArrived(clock.instant());
         entries.put(entry.id(), entry);
 
-        EntryView v = viewOf(entry, clock.instant());
-        notifier.send(cleanPhone, "ClinicQueue: " + entry.patientName() + ", you are #" + v.position()
-                + " for " + svc.name() + " (ticket " + ticket + "). Est. wait ~" + v.estimatedWaitMinutes()
-                + " min. We will text you when it is nearly your turn.");
-        if (v.position() <= NEAR_TURN_POSITION) entry.markNearTurnNotified();
+        if (!cleanPhone.isEmpty()) {
+            EntryView v = viewOf(entry, clock.instant());
+            String message = alreadyArrived
+                    ? "ClinicQueue: " + entry.patientName() + ", you are registered and checked in for "
+                        + svc.name() + " (ticket " + ticket + "). You are #" + v.position()
+                        + " in line; wait for your provider to call you."
+                    : "ClinicQueue: " + entry.patientName() + ", you are #" + v.position()
+                        + " for " + svc.name() + " (ticket " + ticket + "). Est. wait ~"
+                        + v.estimatedWaitMinutes() + " min. We will text you when it is time to come in.";
+            notifier.send(serviceId, cleanPhone, message);
+        }
         afterChange();
         return entry;
     }
@@ -108,15 +127,60 @@ public class QueueService {
 
     public synchronized QueueEntry callNext(String serviceId) {
         Service svc = requireService(serviceId);
-        List<QueueEntry> waiting = waitingSorted(serviceId);
-        if (waiting.isEmpty()) throw new NoSuchElementException("Nobody is waiting for " + svc.name());
+        List<QueueEntry> allWaiting = waitingSorted(serviceId);
+        List<QueueEntry> waiting = allWaiting.stream().filter(QueueEntry::hasArrived).toList();
+        if (waiting.isEmpty()) {
+            if (allWaiting.isEmpty()) throw new NoSuchElementException("Nobody is waiting for " + svc.name());
+            throw new IllegalStateException("No checked-in patients are waiting for " + svc.name());
+        }
         QueueEntry e = waiting.get(0);
         e.setStatus(Status.CALLED);
         e.setCalledAt(clock.instant());
-        notifier.send(e.phone(), "ClinicQueue: " + e.patientName() + ", it is your turn for " + svc.name()
-                + " (ticket " + e.ticket() + "). Please go to the desk now.");
+        if (!e.phone().isEmpty()) {
+            notifier.send(serviceId, e.phone(), "ClinicQueue: " + e.patientName() + ", it is your turn for "
+                    + svc.name() + " (ticket " + e.ticket() + "). Please go to the service area now.");
+        }
         afterChange();
         return e;
+    }
+
+    /** Marks a waiting patient as arrived at the hospital. Repeated check-ins are harmless. */
+    public synchronized QueueEntry markArrived(long id) {
+        QueueEntry e = require(id);
+        if (e.status() != Status.WAITING)
+            throw new IllegalStateException("Only a waiting patient can check in");
+        e.markArrived(clock.instant());
+        afterChange();
+        return e;
+    }
+
+    /** Sends the one-time arrival reminder manually, even if the estimated wait exceeds one hour. */
+    public synchronized QueueEntry sendArrivalReminder(long id) {
+        QueueEntry e = require(id);
+        if (e.status() != Status.WAITING)
+            throw new IllegalStateException("Only a waiting patient can receive an arrival reminder");
+        if (e.hasArrived()) throw new IllegalStateException("This patient has already checked in");
+        if (e.arrivalReminderSentAt() != null)
+            throw new IllegalStateException("The arrival reminder was already sent");
+        if (e.phone().isEmpty()) throw new IllegalStateException("This patient has no phone number");
+        sendArrivalReminder(e, clock.instant());
+        return e;
+    }
+
+    /** Sends automatic arrival reminders for waiting patients whose estimated wait is at most an hour. */
+    public synchronized int dispatchDueArrivalReminders() {
+        Instant now = clock.instant();
+        int sent = 0;
+        for (Service service : services.values()) {
+            for (QueueEntry e : waitingSorted(service.id())) {
+                if (e.hasArrived() || e.phone().isEmpty() || e.arrivalReminderSentAt() != null) continue;
+                if (viewOf(e, now).estimatedWaitMinutes() <= ARRIVAL_REMINDER_MINUTES) {
+                    sendArrivalReminder(e, now);
+                    sent++;
+                }
+            }
+        }
+        return sent;
     }
 
     public synchronized QueueEntry startService(long id) {
@@ -220,14 +284,20 @@ public class QueueService {
         return requireService(id);
     }
 
-    /** Headline numbers plus average wait by hour of day, for the dashboard chart. */
     public synchronized Map<String, Object> stats() {
+        return stats(null);
+    }
+
+    /** Headline numbers plus average wait by hour, optionally restricted to one service. */
+    public synchronized Map<String, Object> stats(String serviceId) {
+        if (serviceId != null) requireService(serviceId);
         int served = 0, noShows = 0, cancelled = 0;
         double waitSum = 0;
         int waitCount = 0;
         Map<Integer, double[]> byHour = new TreeMap<>(); // hour -> {sumWait, count}
         ZoneId zone = clock.getZone();
         for (QueueEntry e : entries.values()) {
+            if (serviceId != null && !e.serviceId().equals(serviceId)) continue;
             if (e.status() == Status.DONE) served++;
             else if (e.status() == Status.NO_SHOW) noShows++;
             else if (e.status() == Status.CANCELLED) cancelled++;
@@ -282,21 +352,17 @@ public class QueueService {
         return waiting;
     }
 
-    /** Text patients who have just moved into the "nearly your turn" zone. */
     private void afterChange() {
-        Instant now = clock.instant();
-        for (Service s : services.values()) {
-            List<QueueEntry> waiting = waitingSorted(s.id());
-            for (int i = 0; i < Math.min(NEAR_TURN_POSITION, waiting.size()); i++) {
-                QueueEntry e = waiting.get(i);
-                if (e.nearTurnNotified()) continue;
-                EntryView v = viewOf(e, now);
-                String lead = v.position() == 1 ? "you are next" : "you are #" + v.position() + " in line";
-                notifier.send(e.phone(), "ClinicQueue: " + e.patientName() + ", " + lead + " for "
-                        + s.name() + " (~" + v.estimatedWaitMinutes() + " min). Please head to the clinic now.");
-                e.markNearTurnNotified();
-            }
-        }
+        dispatchDueArrivalReminders();
+    }
+
+    private void sendArrivalReminder(QueueEntry e, Instant now) {
+        Service service = services.get(e.serviceId());
+        int wait = viewOf(e, now).estimatedWaitMinutes();
+        notifier.send(e.serviceId(), e.phone(), "ClinicQueue: " + e.patientName() + ", please head to the hospital "
+                + "for " + service.name() + " (ticket " + e.ticket() + "). Your estimated wait is about "
+                + wait + " min. Check in on your ticket page when you arrive.");
+        e.markArrivalReminderSentAt(now);
     }
 
     private QueueEntry require(long id) {
