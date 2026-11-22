@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Queue desk - ClinicQueue</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 12'%3E%3Ccircle cx='5' cy='6' r='4.5' fill='%2310262b' opacity='.45'/%3E%3Ccircle cx='15' cy='6' r='4.5' fill='%2310262b' opacity='.45'/%3E%3Ccircle cx='25' cy='6' r='4.5' fill='%23f2b705'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    main { max-width: 1200px; margin: 0 auto; padding: 0 1.25rem 3rem; }
+
+    /* PIN gate */
+    #gate { max-width: 24rem; margin: 3rem auto; }
+    #gate h1 { font-size: 2.2rem; margin-bottom: 0.6rem; }
+    #gate p { color: var(--ink-2); margin-bottom: 1.5rem; }
+
+    .titlebar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 1rem; }
+    .titlebar h1 { font-size: 2rem; }
+
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .tab {
+      appearance: none; font: inherit; font-weight: 700; cursor: pointer;
+      background: transparent; color: var(--ink);
+      border: 2px solid var(--ink); border-radius: 999px;
+      padding: 0.4rem 1rem; min-height: 44px;
+    }
+    .tab[aria-selected="true"] { background: var(--ink); color: var(--amber); }
+
+    .grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+    @media (max-width: 62rem) { .grid { grid-template-columns: 1fr; } }
+
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 1.1rem 1.2rem; margin-bottom: 1.25rem; }
+    .panel h2 { font-size: 1.25rem; margin-bottom: 0.7rem; }
+    .panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
+    .panel-head h2 { margin: 0; }
+
+    .feedback { min-height: 1.6em; margin-bottom: 0.5rem; font-weight: 700; color: var(--green-dark); }
+    .feedback.bad { color: var(--coral); }
+
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 0.92rem; color: var(--ink-2); font-weight: 700; padding: 0.4rem 0.5rem; border-bottom: 2px solid var(--line); }
+    td { padding: 0.65rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .ticket-cell { font-family: var(--font-display); font-weight: 800; font-size: 1.15rem; white-space: nowrap; }
+    .who { font-weight: 700; }
+    .sub { color: var(--ink-2); font-size: 0.92rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    tr.row-in_service td { background: #e1f2ec; }
+    tr.row-called td { background: var(--amber-soft); }
+
+    .badge { display: inline-block; margin-top: 0.3rem; padding: 0.05rem 0.6rem; border-radius: 999px; font-size: 0.88rem; font-weight: 700; }
+    .badge.priority { background: var(--amber); color: var(--ink); }
+    .badge.emergency { background: var(--coral); color: #fff; }
+
+    .empty { padding: 1.5rem 0.5rem; color: var(--ink-2); }
+
+    /* Side panels */
+    .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .tile { border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.85rem; }
+    .tile strong { display: block; font-family: var(--font-display); font-weight: 800; font-size: 1.9rem; letter-spacing: -0.03em; line-height: 1.1; }
+    .tile span { font-size: 0.92rem; color: var(--ink-2); }
+    .tile.hero { grid-column: 1 / -1; background: var(--amber); border-color: var(--amber); }
+    .tile.hero strong { font-size: 2.9rem; }
+    .tile.hero span { color: var(--ink); }
+
+    #chart svg { width: 100%; height: auto; display: block; }
+    #chart .bar { fill: var(--green); }
+    #chart text { fill: var(--ink); font-family: var(--font-body); font-size: 10px; }
+    .chart-note { color: var(--ink-2); font-size: 0.92rem; margin-top: 0.4rem; }
+
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .demo-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+    .demo p { color: var(--ink-2); font-size: 0.95rem; }
+
+    ul.sms { list-style: none; margin: 0; padding: 0; max-height: 16rem; overflow: auto; }
+    ul.sms li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); font-size: 0.95rem; }
+    ul.sms .meta { color: var(--ink-2); font-size: 0.88rem; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">
+      <svg width="30" height="12" viewBox="0 0 30 12" aria-hidden="true">
+        <circle cx="5" cy="6" r="4.5" fill="#10262b" opacity="0.35"/>
+        <circle cx="15" cy="6" r="4.5" fill="#10262b" opacity="0.35"/>
+        <circle cx="25" cy="6" r="4.5" fill="#f2b705"/>
+      </svg>
+      ClinicQueue
+    </a>
+    <button id="lock-btn" class="btn small" type="button" hidden>Sign out</button>
+  </header>
+
+  <main>
+    <section id="gate" hidden>
+      <h1>Queue desk</h1>
+      <p>Enter the staff PIN to manage the queue.</p>
+      <form id="gate-form">
+        <label class="field">Staff PIN
+          <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required>
+        </label>
+        <p id="gate-error" class="error" role="alert"></p>
+        <button class="btn primary wide" type="submit">Open the queue desk</button>
+      </form>
+    </section>
+
+    <div id="dash" hidden>
+      <div class="titlebar">
+        <h1>Queue desk</h1>
+        <div id="tabs" class="tabs" role="tablist" aria-label="Services"></div>
+      </div>
+
+      <div class="grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2 id="q-title">Queue</h2>
+            <button id="next-btn" class="btn primary" type="button">Call next patient</button>
+          </div>
+          <p id="feedback" class="feedback" role="status"></p>
+
+          <table id="queue" hidden>
+            <caption class="visually-hidden">Patients in the live queue</caption>
+            <thead>
+              <tr><th scope="col">Ticket</th><th scope="col">Patient</th><th scope="col">Waiting</th><th scope="col">Status</th><th scope="col">Action</th></tr>
+            </thead>
+            <tbody id="queue-body"></tbody>
+          </table>
+          <p id="empty" class="empty" hidden>Nobody is in line for this service. Add a walk-in patient, or use the demo controls to add a group.</p>
+        </section>
+
+        <aside>
+          <section class="panel">
+            <h2>Today at a glance</h2>
+            <div class="tiles">
+              <div class="tile hero"><strong id="s-expected">-</strong><span id="s-expected-label">minutes expected per patient</span></div>
+              <div class="tile"><strong id="s-wait">0</strong><span>average wait (min)</span></div>
+              <div class="tile"><strong id="s-served">0</strong><span>patients served</span></div>
+              <div class="tile"><strong id="s-noshow">0</strong><span>no-shows</span></div>
+              <div class="tile"><strong id="s-cancelled">0</strong><span>left the queue</span></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>What the system has learned</h2>
+            <div id="chart"></div>
+            <p class="chart-note">Average real consultation length for this service, by hour of the day. Wait estimates use this.</p>
+          </section>
+
+          <section class="panel">
+            <h2>Add a walk-in patient</h2>
+            <form id="walkin-form" novalidate>
+              <label class="field">Name <input id="w-name" maxlength="80" required></label>
+              <label class="field">Phone number <input id="w-phone" type="tel" inputmode="tel" required></label>
+              <label class="field">Priority
+                <select id="w-priority">
+                  <option value="0">Normal</option>
+                  <option value="1">Priority (elderly, pregnant, disabled)</option>
+                  <option value="2">Emergency</option>
+                </select>
+              </label>
+              <label class="field" id="w-reason-wrap" hidden>Reason (saved in the log)
+                <input id="w-reason" maxlength="120">
+              </label>
+              <p id="w-error" class="error" role="alert"></p>
+              <button class="btn wide" type="submit">Add to queue</button>
+            </form>
+          </section>
+
+          <section class="panel demo">
+            <h2>Demo controls</h2>
+            <p>Show the system working without waiting in real time. Fast-forward moves the clock, so the system learns realistic consultation lengths.</p>
+            <div class="demo-buttons">
+              <button id="d-rush" class="btn small" type="button">Add 5 patients</button>
+              <button id="d-5" class="btn small" type="button">Fast-forward 5 min</button>
+              <button id="d-10" class="btn small" type="button">Fast-forward 10 min</button>
+              <button id="d-reset" class="btn small danger" type="button">Reset demo data</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Text messages sent</h2>
+            <ul id="sms" class="sms"></ul>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <script src="/common.js"></script>
+  <script>
+    (() => {
+      const $ = (id) => document.getElementById(id);
+      const PIN_KEY = "clinicqueue-pin";
+      const SVG_NS = "http://www.w3.org/2000/svg";
+
+      let pin = "";
+      try { pin = sessionStorage.getItem(PIN_KEY) || ""; } catch (e) {}
+      let services = [];
+      let current = null;
+      let pollTimer = null;
+      let feedbackTimer = null;
+
+      const sapi = (path, opts = {}) => CQ.api(path, Object.assign({}, opts, { pin }));
+
+      function el(tag, cls, text) {
+        const e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text !== undefined) e.textContent = text;
+        return e;
+      }
+
+      function feedback(message, bad) {
+        const f = $("feedback");
+        f.textContent = message;
+        f.className = "feedback" + (bad ? " bad" : "");
+        clearTimeout(feedbackTimer);
+        feedbackTimer = setTimeout(() => { f.textContent = ""; }, 7000);
+      }
+
+      // ---------- PIN gate
+      function showGate(message) {
+        clearInterval(pollTimer);
+        $("dash").hidden = true;
+        $("lock-btn").hidden = true;
+        $("gate").hidden = false;
+        $("gate-error").textContent = message || "";
+        $("pin").focus();
+      }
+
+      function showDash() {
+        $("gate").hidden = true;
+        $("dash").hidden = false;
+        $("lock-btn").hidden = false;
+        refresh();
+        clearInterval(pollTimer);
+        pollTimer = setInterval(refresh, 3000);
+      }
+
+      $("gate-form").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        pin = $("pin").value;
+        try {
+          await sapi("/api/staff/stats");
+          try { sessionStorage.setItem(PIN_KEY, pin); } catch (e) {}
+          $("pin").value = "";
+          showDash();
+        } catch (e) {
+          showGate(e.status === 401 ? "That PIN is not correct. Try again." : e.message);
+        }
+      });
+
+      $("lock-btn").addEventListener("click", () => {
+        pin = "";
+        try { sessionStorage.removeItem(PIN_KEY); } catch (e) {}
+        location.href = "/";
+      });
+
+      // ---------- refresh loop
+      async function refresh() {
+        try {
+          services = await CQ.api("/api/services");
+          if (!current || !services.some((s) => s.id === current)) current = services[0].id;
+          renderTabs();
+          const [rows, stats, sms] = await Promise.all([
+            sapi("/api/staff/queue/" + current),
+            sapi("/api/staff/stats"),
+            sapi("/api/staff/sms"),
+          ]);
+          renderQueue(rows);
+          renderStats(stats);
+          renderSms(sms);
+        } catch (e) {
+          if (e.status === 401) showGate("Your session ended. Enter the PIN again.");
+          else feedback(e.message, true);
+        }
+      }
+
+      function renderTabs() {
+        const tabs = $("tabs");
+        if (tabs.children.length !== services.length) {
+          tabs.textContent = "";
+          services.forEach((s) => {
+            const b = el("button", "tab");
+            b.type = "button";
+            b.setAttribute("role", "tab");
+            b.dataset.id = s.id;
+            b.addEventListener("click", () => { current = s.id; refresh(); });
+            tabs.append(b);
+          });
+        }
+        services.forEach((s, i) => {
+          const b = tabs.children[i];
+          b.textContent = s.name + " (" + s.waiting + ")";
+          b.setAttribute("aria-selected", String(s.id === current));
+        });
+      }
+
+      // ---------- queue table
+      function actBtn(label, cls, key, handler) {
+        const b = el("button", "btn small " + cls, label);
+        b.type = "button";
+        b.dataset.key = key;
+        b.addEventListener("click", async () => {
+          b.disabled = true;
+          try { await handler(); } catch (e) { feedback(e.message, true); }
+          refresh();
+        });
+        return b;
+      }
+
+      function entryAction(row, action, doneText) {
+        return async () => {
+          await sapi("/api/staff/entries/" + row.id + "/" + action, { method: "POST" });
+          feedback(doneText + " " + row.patientName + " (" + row.ticket + ")");
+        };
+      }
+
+      function renderQueue(rows) {
+        const svc = services.find((s) => s.id === current);
+        $("q-title").textContent = svc.name + " queue";
+        $("next-btn").disabled = !rows.some((r) => r.status === "WAITING");
+
+        const active = document.activeElement;
+        const focusKey = active && active.dataset ? active.dataset.key : null;
+
+        const body = $("queue-body");
+        body.textContent = "";
+        $("queue").hidden = rows.length === 0;
+        $("empty").hidden = rows.length > 0;
+
+        rows.forEach((r) => {
+          const tr = el("tr", "row-" + r.status.toLowerCase());
+          tr.append(el("td", "ticket-cell", r.ticket));
+
+          const who = el("td");
+          who.append(el("div", "who", r.patientName), el("div", "sub", r.phone));
+          if (r.priority > 0) {
+            who.append(el("span", "badge " + (r.priority === 2 ? "emergency" : "priority"),
+              (r.priority === 2 ? "Emergency: " : "Priority: ") + r.priorityReason));
+          }
+          tr.append(who);
+
+          tr.append(el("td", null, r.waitingMinutes + " min"));
+
+          const status = r.status === "WAITING" ? "Waiting, #" + r.position
+            : r.status === "CALLED" ? "Called" : "In service";
+          tr.append(el("td", null, status));
+
+          const actions = el("div", "actions");
+          if (r.status === "WAITING") {
+            actions.append(actBtn("Remove", "danger", "cancel-" + r.id, entryAction(r, "cancel", "Removed")));
+          } else if (r.status === "CALLED") {
+            actions.append(
+              actBtn("Start", "", "start-" + r.id, entryAction(r, "start", "Started")),
+              actBtn("No-show", "danger", "noshow-" + r.id, entryAction(r, "noshow", "Marked no-show:")));
+          } else if (r.status === "IN_SERVICE") {
+            actions.append(actBtn("Finish", "", "finish-" + r.id, entryAction(r, "finish", "Finished")));
+          }
+          const cell = el("td");
+          cell.append(actions);
+          tr.append(cell);
+          body.append(tr);
+        });
+
+        if (focusKey) {
+          const again = document.querySelector('[data-key="' + focusKey + '"]');
+          if (again) again.focus();
+        }
+      }
+
+      $("next-btn").addEventListener("click", async () => {
+        $("next-btn").disabled = true;
+        try {
+          const r = await sapi("/api/staff/call-next/" + current, { method: "POST" });
+          feedback("Called " + r.patientName + " (" + r.ticket + "). Their phone was texted.");
+        } catch (e) {
+          feedback(e.message, true);
+        }
+        refresh();
+      });
+
+      // ---------- stats, chart, sms
+      function renderStats(st) {
+        const svc = services.find((s) => s.id === current);
+        $("s-expected").textContent = svc.expectedMinutesPerPatient.toFixed(1);
+        $("s-expected-label").textContent = "minutes expected per patient, from " + svc.samples + " past visits";
+        $("s-wait").textContent = st.avgWaitMinutes;
+        $("s-served").textContent = st.served;
+        $("s-noshow").textContent = st.noShows;
+        $("s-cancelled").textContent = st.cancelled;
+        renderChart(st.learned);
+      }
+
+      function renderChart(learned) {
+        const box = $("chart");
+        box.textContent = "";
+        const svc = learned.find((l) => l.serviceId === current);
+        if (!svc || svc.byHour.length === 0) {
+          box.append(el("p", "chart-note", "No consultations recorded yet."));
+          return;
+        }
+        const W = 360, H = 150, padX = 8, padTop = 18, padBottom = 22;
+        const n = svc.byHour.length;
+        const max = Math.max(...svc.byHour.map((h) => h.avgMinutes));
+        const slot = (W - padX * 2) / n;
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+        svg.setAttribute("role", "img");
+        svg.setAttribute("aria-label", "Average minutes per patient by hour: " +
+          svc.byHour.map((h) => h.hour + ":00 " + h.avgMinutes).join(", "));
+
+        svc.byHour.forEach((h, i) => {
+          const height = (h.avgMinutes / max) * (H - padTop - padBottom);
+          const x = padX + i * slot + slot * 0.15;
+          const w = slot * 0.7;
+          const y = H - padBottom - height;
+
+          const rect = document.createElementNS(SVG_NS, "rect");
+          rect.setAttribute("class", "bar");
+          rect.setAttribute("x", x);
+          rect.setAttribute("y", y);
+          rect.setAttribute("width", w);
+          rect.setAttribute("height", height);
+          rect.setAttribute("rx", 3);
+
+          const value = document.createElementNS(SVG_NS, "text");
+          value.setAttribute("x", x + w / 2);
+          value.setAttribute("y", y - 4);
+          value.setAttribute("text-anchor", "middle");
+          value.textContent = h.avgMinutes;
+
+          const label = document.createElementNS(SVG_NS, "text");
+          label.setAttribute("x", x + w / 2);
+          label.setAttribute("y", H - 7);
+          label.setAttribute("text-anchor", "middle");
+          label.textContent = h.hour + ":00";
+
+          svg.append(rect, value, label);
+        });
+        box.append(svg);
+      }
+
+      function renderSms(list) {
+        const ul = $("sms");
+        ul.textContent = "";
+        if (list.length === 0) {
+          ul.append(el("li", "sub", "No messages yet. They appear here when patients join, get close to their turn, or are called."));
+          return;
+        }
+        list.slice(0, 12).forEach((m) => {
+          const li = el("li");
+          li.append(el("div", "meta", CQ.fmtTime(m.sentAt) + " to " + m.phone), el("div", null, m.message));
+          ul.append(li);
+        });
+      }
+
+      // ---------- walk-in form
+      $("w-priority").addEventListener("change", () => {
+        $("w-reason-wrap").hidden = $("w-priority").value === "0";
+      });
+
+      $("walkin-form").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const err = $("w-error");
+        err.textContent = "";
+        try {
+          const r = await sapi("/api/staff/join", {
+            method: "POST",
+            body: {
+              name: $("w-name").value,
+              phone: $("w-phone").value,
+              serviceId: current,
+              priority: $("w-priority").value,
+              reason: $("w-reason").value,
+            },
+          });
+          feedback("Added " + r.patientName + " as " + r.ticket);
+          $("walkin-form").reset();
+          $("w-reason-wrap").hidden = true;
+          refresh();
+        } catch (e) {
+          err.textContent = e.message;
+        }
+      });
+
+      // ---------- demo controls
+      async function demo(path, body, doneText) {
+        try {
+          const r = await sapi(path, { method: "POST", body });
+          feedback(typeof doneText === "function" ? doneText(r) : doneText);
+        } catch (e) {
+          feedback(e.message, true);
+        }
+        refresh();
+      }
+
+      $("d-rush").addEventListener("click", () =>
+        demo("/api/demo/rush", { serviceId: current, count: 5 }, (r) => "Added " + r.joined + " patients"));
+      $("d-5").addEventListener("click", () =>
+        demo("/api/demo/advance", { minutes: 5 }, (r) => "Clock moved forward 5 minutes" + (r.noShowsMarked ? ", " + r.noShowsMarked + " no-show(s) released" : "")));
+      $("d-10").addEventListener("click", () =>
+        demo("/api/demo/advance", { minutes: 10 }, (r) => "Clock moved forward 10 minutes" + (r.noShowsMarked ? ", " + r.noShowsMarked + " no-show(s) released" : "")));
+      $("d-reset").addEventListener("click", () => {
+        if (confirm("Reset all queue data and start the demo again?")) demo("/api/demo/reset", {}, "Demo data reset");
+      });
+
+      // ---------- start
+      if (pin) {
+        sapi("/api/staff/stats").then(showDash).catch(() => showGate(""));
+      } else {
+        showGate("");
+      }
+    })();
+  </script>
+</body>
+</html>

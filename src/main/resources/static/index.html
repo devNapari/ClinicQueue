@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClinicQueue</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 12'%3E%3Ccircle cx='5' cy='6' r='4.5' fill='%2310262b' opacity='.45'/%3E%3Ccircle cx='15' cy='6' r='4.5' fill='%2310262b' opacity='.45'/%3E%3Ccircle cx='25' cy='6' r='4.5' fill='%23f2b705'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    main { max-width: 56rem; margin: 0 auto; padding: 0.5rem 1.25rem 3rem; }
+
+    h1 { font-size: clamp(2rem, 6vw, 3rem); margin: 1rem 0 1.5rem; max-width: 20ch; }
+
+    .resume {
+      background: var(--amber-soft);
+      border-left: 6px solid var(--amber);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .choices { display: grid; gap: 1.25rem; }
+    @media (min-width: 48rem) { .choices { grid-template-columns: 1fr 1fr; } }
+
+    .choice { display: flex; flex-direction: column; justify-content: space-between; min-height: 18rem; }
+    .choice h2 { font-size: clamp(1.7rem, 5vw, 2.1rem); margin-bottom: 0.6rem; }
+    .choice p { max-width: 34ch; }
+
+    /* Staff: dark panel */
+    .staff { background: var(--ink); color: #fff; border-radius: 14px; padding: 1.5rem; }
+    .staff p { color: #d3dfdd; }
+    .staff .choice-bottom { margin-top: 1.5rem; }
+    .btn.amber { background: var(--amber); border-color: var(--amber); color: var(--ink); }
+    .btn.amber:hover:not(:disabled) { background: #ffd24d; border-color: #ffd24d; color: var(--ink); }
+    .staff .field { color: #fff; margin-top: 1rem; }
+    .staff .error { color: #ff9b94; margin: 0.25rem 0 0.75rem; }
+    .staff :focus-visible { outline-color: var(--amber); }
+
+    /* Patient: the amber ticket */
+    .patient { position: relative; background: var(--amber); border-radius: 8px; box-shadow: 0 2px 0 rgba(16, 38, 43, 0.25); }
+    .patient .choice-top { padding: 1.5rem 1.5rem 1.25rem; }
+    .patient .perf { position: relative; border-top: 3px dashed rgba(16, 38, 43, 0.35); margin: 0 0.9rem; }
+    .patient .perf::before, .patient .perf::after {
+      content: "";
+      position: absolute;
+      top: -14px;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--paper);
+    }
+    .patient .perf::before { left: -27px; }
+    .patient .perf::after { right: -27px; }
+    .patient .choice-bottom { padding: 1.25rem 1.5rem 1.5rem; }
+    .btn.dark { background: var(--ink); border-color: var(--ink); color: #fff; }
+    .btn.dark:hover:not(:disabled) { background: #000; border-color: #000; }
+    .patient :focus-visible { outline-color: var(--ink); }
+
+    /* Shown only on the computer that runs ClinicQueue: the address phones use on the same Wi-Fi */
+    .phones { margin-top: 1.5rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; color: var(--ink-2); }
+    .phones code { background: var(--surface); border: 1px solid var(--ink-2); border-radius: 6px; padding: 0.2rem 0.5rem; color: var(--ink); user-select: all; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">
+      <svg width="30" height="12" viewBox="0 0 30 12" aria-hidden="true">
+        <circle cx="5" cy="6" r="4.5" fill="#10262b" opacity="0.35"/>
+        <circle cx="15" cy="6" r="4.5" fill="#10262b" opacity="0.35"/>
+        <circle cx="25" cy="6" r="4.5" fill="#f2b705"/>
+      </svg>
+      ClinicQueue
+    </a>
+  </header>
+
+  <main>
+    <h1>Choose how you are using ClinicQueue</h1>
+
+    <p id="resume" class="resume" hidden>You already have a ticket, <strong id="ticket-code"></strong>. <a href="/join">View my ticket</a></p>
+
+    <div class="choices">
+      <section class="choice staff" aria-labelledby="staff-title">
+        <div>
+          <h2 id="staff-title">I work at the queue desk</h2>
+          <p>Call patients, keep the line moving and see how long people are waiting.</p>
+        </div>
+        <div class="choice-bottom">
+          <button id="staff-toggle" class="btn amber wide" type="button" aria-expanded="false" aria-controls="staff-form">Sign in as queue desk staff</button>
+          <form id="staff-form" hidden>
+            <label class="field">Staff PIN
+              <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required>
+            </label>
+            <p id="pin-error" class="error" role="alert"></p>
+            <button class="btn amber wide" type="submit">Sign in</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="choice patient" aria-labelledby="patient-title">
+        <div class="choice-top">
+          <h2 id="patient-title">I am a patient</h2>
+          <p>Get a ticket and wait wherever you like. We will text you when it is nearly your turn.</p>
+        </div>
+        <div>
+          <div class="perf"></div>
+          <div class="choice-bottom">
+            <a class="btn dark wide" href="/join" style="display:block;text-align:center;text-decoration:none;line-height:1.9;">Join the queue</a>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <p id="phones" class="phones" hidden>
+      <span>Patients on the same Wi-Fi can open</span>
+      <code id="phones-url"></code>
+      <button id="phones-copy" class="btn small" type="button">Copy link</button>
+    </p>
+  </main>
+
+  <script src="/common.js"></script>
+  <script>
+    (() => {
+      const $ = (id) => document.getElementById(id);
+      const PIN_KEY = "clinicqueue-pin";
+      const TICKET_KEY = "clinicqueue-ticket";
+
+      // A patient who already has an active ticket gets a shortcut back to it.
+      (async () => {
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem(TICKET_KEY)); } catch (e) {}
+        if (!saved || !saved.id) return;
+        try {
+          const t = await CQ.api("/api/queue/" + saved.id);
+          if (t.ticket !== saved.ticket) return;
+          if (["WAITING", "CALLED", "IN_SERVICE"].indexOf(t.status) < 0) return;
+          $("ticket-code").textContent = t.ticket;
+          $("resume").hidden = false;
+        } catch (e) { /* no banner */ }
+      })();
+
+      // On the computer running ClinicQueue, show the address patients' phones can use.
+      (async () => {
+        try {
+          const lan = await CQ.api("/api/lan");
+          if (!lan || !lan.url) return;
+          $("phones-url").textContent = lan.url;
+          $("phones").hidden = false;
+          $("phones-copy").addEventListener("click", async () => {
+            try {
+              if (window.cqDesktop) window.cqDesktop.copy(lan.url);   // the desktop app's own window
+              else await navigator.clipboard.writeText(lan.url);
+            } catch (e) {
+              const r = document.createRange(); r.selectNodeContents($("phones-url"));
+              const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+            }
+            $("phones-copy").textContent = "Copied";
+            setTimeout(() => { $("phones-copy").textContent = "Copy link"; }, 1500);
+          });
+        } catch (e) { /* not the host computer: no banner */ }
+      })();
+
+      $("staff-toggle").addEventListener("click", () => {
+        const opening = $("staff-form").hidden;
+        $("staff-form").hidden = !opening;
+        $("staff-toggle").setAttribute("aria-expanded", String(opening));
+        if (opening) $("pin").focus();
+      });
+
+      $("staff-form").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const err = $("pin-error");
+        err.textContent = "";
+        const pin = $("pin").value;
+        try {
+          await CQ.api("/api/staff/stats", { pin });
+          try { sessionStorage.setItem(PIN_KEY, pin); } catch (e) {}
+          location.href = "/staff";
+        } catch (e) {
+          err.textContent = e.status === 401 ? "That PIN is not correct. Try again." : e.message;
+          $("pin").select();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

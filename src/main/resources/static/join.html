@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClinicQueue</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 12'%3E%3Ccircle cx='5' cy='6' r='4.5' fill='%2310262b' opacity='.45'/%3E%3Ccircle cx='15' cy='6' r='4.5' fill='%2310262b' opacity='.45'/%3E%3Ccircle cx='25' cy='6' r='4.5' fill='%23f2b705'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    main { max-width: 30rem; margin: 0 auto; padding: 0.5rem 1.25rem 3rem; }
+
+    h1 { font-size: clamp(2rem, 8vw, 2.7rem); margin: 0.75rem 0 0.9rem; }
+    .lede { color: var(--ink-2); margin-bottom: 1.75rem; }
+
+    fieldset { border: 0; padding: 0; margin: 0 0 1.5rem; }
+    legend { font-weight: 700; padding: 0; margin-bottom: 0.6rem; }
+
+    /* Service choices: the live wait is the headline of each row */
+    .services { display: grid; gap: 0.6rem; }
+    .service {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.9rem 1rem;
+      background: var(--surface);
+      border: 2px solid var(--line);
+      border-radius: 14px;
+      cursor: pointer;
+    }
+    .service input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+    .service:has(input:checked) { border-color: var(--ink); box-shadow: 4px 4px 0 var(--amber); }
+    .service:has(input:focus-visible) { outline: 3px solid var(--ink); outline-offset: 2px; }
+    .service-text { display: flex; flex-direction: column; }
+    .service-name { font-weight: 700; }
+    .service-meta { font-size: 0.92rem; color: var(--ink-2); }
+    .service-eta { font-family: var(--font-display); font-weight: 800; font-size: 1rem; white-space: nowrap; text-align: right; }
+    .service-eta strong { font-size: 2rem; letter-spacing: -0.03em; }
+
+    /* The ticket */
+    .ticket {
+      position: relative;
+      background: var(--amber);
+      border-radius: 8px;
+      margin-top: 1rem;
+      box-shadow: 0 2px 0 rgba(16, 38, 43, 0.25);
+    }
+    .ticket-top { padding: 1.25rem 1.4rem 1.1rem; }
+    .ticket-service { font-weight: 700; }
+    .ticket-code {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: clamp(3.2rem, 17vw, 4.6rem);
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+    .perf {
+      position: relative;
+      border-top: 3px dashed rgba(16, 38, 43, 0.35);
+      margin: 0 0.9rem;
+    }
+    .perf::before, .perf::after {
+      content: "";
+      position: absolute;
+      top: -14px;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--paper);
+    }
+    .perf::before { left: -27px; }
+    .perf::after { right: -27px; }
+    .ticket-body { padding: 1.25rem 1.4rem 1.5rem; }
+    .ticket-body h2 { font-size: clamp(1.7rem, 7vw, 2.2rem); margin-bottom: 0.4rem; }
+
+    /* One dot per person ahead; you are the dark pill at the end */
+    .strip { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 1.1rem 0 1rem; }
+    .dot {
+      width: 1.1rem;
+      height: 1.1rem;
+      border-radius: 50%;
+      background: rgba(16, 38, 43, 0.28);
+      transition: width 0.4s, opacity 0.4s, margin 0.4s;
+    }
+    .dot.out { width: 0; opacity: 0; margin-right: -0.4rem; }
+    .more { font-weight: 700; font-size: 0.95rem; }
+    .you {
+      background: var(--ink);
+      color: var(--amber);
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 0.15rem 0.8rem;
+    }
+    .eta { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; letter-spacing: -0.02em; }
+    .eta small { display: block; font-family: var(--font-body); font-weight: 400; font-size: 0.92rem; letter-spacing: 0; }
+
+    /* The one moment of motion: it is your turn */
+    .ticket[data-status="CALLED"] { animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(14, 124, 102, 0.7); }
+      50% { box-shadow: 0 0 0 14px rgba(14, 124, 102, 0); }
+    }
+    .ticket[data-status="DONE"], .ticket[data-status="NO_SHOW"], .ticket[data-status="CANCELLED"] {
+      background: #d8dfdf;
+    }
+    .ticket[data-status="IN_SERVICE"] { background: #bfe3d9; }
+
+    .smallprint { color: var(--ink-2); font-size: 0.95rem; margin: 1.1rem 0 1.25rem; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">
+      <svg width="30" height="12" viewBox="0 0 30 12" aria-hidden="true">
+        <circle cx="5" cy="6" r="4.5" fill="#10262b" opacity="0.35"/>
+        <circle cx="15" cy="6" r="4.5" fill="#10262b" opacity="0.35"/>
+        <circle cx="25" cy="6" r="4.5" fill="#f2b705"/>
+      </svg>
+      ClinicQueue
+    </a>
+  </header>
+
+  <main>
+    <section id="join-view">
+      <h1>Wait at home. We will text you when it is nearly your turn.</h1>
+      <p class="lede">Choose a service, join the line from your phone, and come in when it is close.</p>
+
+      <form id="join-form" novalidate>
+        <fieldset>
+          <legend>What do you need today?</legend>
+          <div id="service-list" class="services"></div>
+        </fieldset>
+
+        <label class="field">Your name
+          <input id="name" name="name" autocomplete="name" maxlength="80" required>
+        </label>
+
+        <label class="field">Phone number
+          <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="024 123 4567" required>
+          <span class="hint">We only use it to text you about your turn.</span>
+        </label>
+
+        <p id="join-error" class="error" role="alert"></p>
+        <button id="join-btn" class="btn primary wide" type="submit">Join the queue</button>
+      </form>
+    </section>
+
+    <section id="ticket-view" hidden>
+      <article id="ticket" class="ticket" data-status="WAITING">
+        <div class="ticket-top">
+          <p id="t-service" class="ticket-service"></p>
+          <p id="t-code" class="ticket-code"></p>
+        </div>
+        <div class="perf"></div>
+        <div class="ticket-body">
+          <h2 id="t-headline" aria-live="polite"></h2>
+          <p id="t-sub"></p>
+          <div id="strip" class="strip" aria-hidden="true">
+            <span id="more" class="more"></span>
+            <span id="you" class="you">You</span>
+          </div>
+          <p id="t-eta-wrap" class="eta"><span id="t-eta"></span><small>estimated wait</small></p>
+        </div>
+      </article>
+
+      <p id="t-note" class="smallprint">This page updates by itself, and we will also text you.</p>
+      <button id="leave-btn" class="btn danger wide" type="button">Leave the queue</button>
+      <button id="again-btn" class="btn primary wide" type="button" hidden>Join the queue again</button>
+    </section>
+  </main>
+
+  <script src="/common.js"></script>
+  <script>
+    (() => {
+      const $ = (id) => document.getElementById(id);
+      const KEY = "clinicqueue-ticket";
+      const MAX_DOTS = 12;
+      const TITLES = { CALLED: "Your turn", IN_SERVICE: "Being seen", DONE: "Done", NO_SHOW: "Missed", CANCELLED: "Cancelled" };
+
+      let ticket = null;      // { id, ticket } of the patient's own ticket
+      let prevStatus = null;
+      let services = [];
+
+      // ---------- storage (may be unavailable in private windows)
+      function saveTicket(t) { try { localStorage.setItem(KEY, JSON.stringify({ id: t.id, ticket: t.ticket })); } catch (e) {} }
+      function loadTicket() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
+      function clearTicket() { try { localStorage.removeItem(KEY); } catch (e) {} }
+
+      function show(view) {
+        $("join-view").hidden = view !== "join";
+        $("ticket-view").hidden = view !== "ticket";
+        if (view === "join") document.title = "ClinicQueue";
+      }
+
+      // ---------- join view
+      async function loadServices() {
+        try {
+          services = await CQ.api("/api/services");
+          renderServices();
+        } catch (e) { /* keep showing the last list */ }
+      }
+
+      function renderServices() {
+        const checked = document.querySelector("input[name=service]:checked");
+        const selected = checked ? checked.value : null;
+        const list = $("service-list");
+        list.textContent = "";
+        services.forEach((s, i) => {
+          const label = document.createElement("label");
+          label.className = "service";
+
+          const input = document.createElement("input");
+          input.type = "radio";
+          input.name = "service";
+          input.value = s.id;
+          input.checked = selected ? selected === s.id : i === 0;
+
+          const text = document.createElement("span");
+          text.className = "service-text";
+          const name = document.createElement("span");
+          name.className = "service-name";
+          name.textContent = s.name;
+          const meta = document.createElement("span");
+          meta.className = "service-meta";
+          const active = s.waiting + s.called + s.inService;
+          meta.textContent = active === 0 ? "Nobody in line" : active + (active === 1 ? " person in line" : " people in line");
+          text.append(name, meta);
+
+          const eta = document.createElement("span");
+          eta.className = "service-eta";
+          if (s.estimatedWaitMinutes === 0) {
+            eta.textContent = "No wait";
+          } else {
+            const n = document.createElement("strong");
+            n.textContent = s.estimatedWaitMinutes;
+            const u = document.createElement("span");
+            u.textContent = " min";
+            eta.append(n, u);
+          }
+
+          label.append(input, text, eta);
+          list.append(label);
+        });
+      }
+
+      $("join-form").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const err = $("join-error");
+        err.textContent = "";
+        const btn = $("join-btn");
+        btn.disabled = true;
+        try {
+          const sel = document.querySelector("input[name=service]:checked");
+          const t = await CQ.api("/api/queue/join", {
+            method: "POST",
+            body: { name: $("name").value, phone: $("phone").value, serviceId: sel ? sel.value : "" },
+          });
+          saveTicket(t);
+          ticket = { id: t.id, ticket: t.ticket };
+          prevStatus = null;
+          show("ticket");
+          render(t);
+        } catch (e) {
+          err.textContent = e.message;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      // ---------- ticket view
+      function ahead(n) {
+        return n === 1 ? "1 person ahead of you" : n + " people ahead of you";
+      }
+
+      function renderStrip(count) {
+        const strip = $("strip");
+        const more = $("more");
+        const shown = Math.min(count, MAX_DOTS);
+        let dots = strip.querySelectorAll(".dot:not(.out)");
+        while (dots.length < shown) {
+          const d = document.createElement("span");
+          d.className = "dot";
+          strip.insertBefore(d, more);
+          dots = strip.querySelectorAll(".dot:not(.out)");
+        }
+        for (let i = shown; i < dots.length; i++) {
+          const d = dots[i];
+          d.classList.add("out");
+          setTimeout(() => d.remove(), 450);
+        }
+        more.textContent = count > MAX_DOTS ? "+" + (count - MAX_DOTS) : "";
+      }
+
+      function render(t) {
+        $("t-service").textContent = t.serviceName;
+        $("t-code").textContent = t.ticket;
+        $("ticket").dataset.status = t.status;
+
+        let headline, sub;
+        let waiting = false;
+        switch (t.status) {
+          case "WAITING":
+            waiting = true;
+            headline = t.position === 1 ? "You are next" : "You are " + CQ.ordinal(t.position) + " in line";
+            sub = t.position <= 3
+              ? ahead(t.peopleAhead) + ". Please head to the clinic now."
+              : ahead(t.peopleAhead) + ". Stay where you are. We will text you when you reach 3rd place.";
+            break;
+          case "CALLED":
+            headline = "It is your turn";
+            sub = "Go to the " + t.serviceName + " desk now. We will hold your place for 10 minutes.";
+            break;
+          case "IN_SERVICE":
+            headline = "You are being seen";
+            sub = "Thank you for waiting. You can close this page.";
+            break;
+          case "DONE":
+            headline = "All done";
+            sub = "Feel better soon.";
+            break;
+          case "NO_SHOW":
+            headline = "You missed your turn";
+            sub = "Your place was released. You can join the queue again.";
+            break;
+          default:
+            headline = "Ticket cancelled";
+            sub = "You left the queue. You can join again any time.";
+        }
+        $("t-headline").textContent = headline;
+        $("t-sub").textContent = sub;
+
+        $("strip").hidden = !waiting;
+        $("t-eta-wrap").hidden = !waiting;
+        if (waiting) {
+          renderStrip(t.peopleAhead);
+          $("t-eta").textContent = t.estimatedWaitMinutes <= 1 ? "Any moment now" : "About " + t.estimatedWaitMinutes + " min";
+        }
+
+        const finished = !(t.status === "WAITING" || t.status === "CALLED");
+        $("leave-btn").hidden = finished || t.status === "IN_SERVICE";
+        $("again-btn").hidden = !(t.status === "DONE" || t.status === "NO_SHOW" || t.status === "CANCELLED");
+        $("t-note").hidden = t.status === "DONE" || t.status === "NO_SHOW" || t.status === "CANCELLED";
+
+        document.title = waiting
+          ? "#" + t.position + " in line - ClinicQueue"
+          : (TITLES[t.status] || "ClinicQueue") + " - ClinicQueue";
+
+        if (prevStatus && prevStatus !== "CALLED" && t.status === "CALLED" && navigator.vibrate) {
+          navigator.vibrate([200, 100, 200]);
+        }
+        prevStatus = t.status;
+      }
+
+      async function refreshTicket() {
+        try {
+          const t = await CQ.api("/api/queue/" + ticket.id);
+          if (t.ticket !== ticket.ticket) { leaveView(); return; } // server was reset: stale ticket
+          render(t);
+        } catch (e) {
+          if (e.status === 404) leaveView();
+        }
+      }
+
+      function leaveView() {
+        clearTicket();
+        ticket = null;
+        prevStatus = null;
+        show("join");
+        loadServices();
+      }
+
+      $("leave-btn").addEventListener("click", async () => {
+        if (!confirm("Leave the queue? You will lose your place in line.")) return;
+        try {
+          render(await CQ.api("/api/queue/" + ticket.id + "/cancel", { method: "POST" }));
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      $("again-btn").addEventListener("click", leaveView);
+
+      // ---------- polling loop
+      function tick() {
+        if (ticket) refreshTicket(); else loadServices();
+      }
+
+      ticket = loadTicket();
+      if (ticket) { show("ticket"); refreshTicket(); } else { show("join"); loadServices(); }
+      setInterval(tick, 3000);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+/* ClinicQueue shared styles: tokens, base, buttons, forms */
+:root {
+  --paper: #e9eeee;
+  --surface: #ffffff;
+  --ink: #10262b;
+  --ink-2: #4a6168;
+  --line: #c9d5d4;
+  --green: #0e7c66;
+  --green-dark: #0a5c4c;
+  --amber: #f2b705;
+  --amber-soft: #fdeeb4;
+  --coral: #c93a3a;
+  --font-display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
+  line-height: 1.5;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  margin: 0;
+}
+
+p { margin: 0; }
+
+a { color: var(--green-dark); }
+
+:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.brand svg { display: block; }
+
+.toplink { font-size: 0.95rem; }
+
+/* Buttons */
+.btn {
+  appearance: none;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  padding: 0.7rem 1.1rem;
+  min-height: 48px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) { background: var(--ink); color: var(--surface); }
+
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn.primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+.btn.primary:hover:not(:disabled) { background: var(--green-dark); border-color: var(--green-dark); }
+
+.btn.danger { border-color: var(--coral); color: var(--coral); }
+
+.btn.danger:hover:not(:disabled) { background: var(--coral); color: #fff; }
+
+.btn.small { min-height: 38px; padding: 0.35rem 0.8rem; font-size: 0.95rem; border-radius: 8px; }
+
+.btn.wide { width: 100%; }
+
+/* Forms */
+label.field { display: block; font-weight: 700; margin-bottom: 1rem; }
+
+.field input, .field select {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  font: inherit;
+  font-weight: 400;
+  color: var(--ink);
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+  min-height: 48px;
+}
+
+.field input:focus-visible, .field select:focus-visible { border-color: var(--ink); outline-offset: 0; }
+
+.hint { display: block; font-weight: 400; font-size: 0.92rem; color: var(--ink-2); margin-top: 0.25rem; }
+
+.error { color: var(--coral); font-weight: 700; min-height: 1.5em; margin-bottom: 0.75rem; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
